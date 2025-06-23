@@ -1,0 +1,267 @@
+---
+title: "Project"
+author: "DANA 4820"
+date: "2025-02-19"
+output: html_document
+---
+## Dataset
+
+```{r}
+# Load necessary libraries
+library(dplyr)  # Data manipulation
+library(ggplot2)  # Data visualization
+library(caret)  # Machine learning and feature selection
+library(corrplot)  # Correlation plot
+library(car)  # For regression diagnostics
+```
+
+```{r}
+#install.packages("corrplot", dependencies = TRUE)
+```
+
+```{r}
+# Load dataset
+data <- read.csv("global_health.csv")
+
+# Inspect dataset
+str(data)  # Check structure
+summary(data)  # Get basic statistics
+head(data)  # Preview first few rows
+```
+
+### Continents 
+
+
+
+```{r}
+#install.packages("countrycode")  # Install the package (only once)
+library(countrycode)  # Load the package
+```
+
+
+```{r}
+# Add continent column based on country names
+data$Continent <- countrycode(data$Country, origin = "country.name", 
+                  destination = "continent")
+
+# View a few rows to confirm
+head(data)
+```
+
+
+
+```{r}
+# Check for missing values
+colSums(is.na(data))
+```
+
+### Health vs Economic
+
+```{r}
+
+library(dplyr)  # Data manipulation
+# Select relevant variables
+data_Health_Eco <- data %>%
+  select(Continent, Life_Expectancy,Infant_Deaths, Hospital_Beds_Per_1000, GDP_Per_Capita, Sanitary_Expense_Per_GDP, Unemployment_Rate)
+
+# View first few rows
+head(data_Health_Eco)
+```
+
+#### EDA
+
+
+```{r}
+data_Health_Eco <- na.omit(data_Health_Eco)
+
+# Check again for missing values
+colSums(is.na(data_Health_Eco))
+```
+
+```{r}
+
+numeric_data <- data_Health_Eco[sapply(data_Health_Eco, is.numeric)]
+
+# Compute correlation matrix
+cor_matrix_Health_Eco <- cor(numeric_data, use = "complete.obs")
+
+# Improved correlation plot
+corrplot(cor_matrix_Health_Eco, method = "color", 
+         tl.cex = 0.6, # Reduce text size
+         tl.col = "black", # Change text color to black
+         addCoef.col = "black", # Show correlation values
+         number.cex = 0.6) # Adjust coefficient text size
+
+```
+#### Scatterplot
+
+```{r}
+# Load ggplot2
+library(ggplot2)
+
+# Life Expectancy vs GDP Per Capita
+ggplot(data_Health_Eco, aes(x = GDP_Per_Capita, y = Life_Expectancy)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(title = "Life Expectancy vs GDP Per Capita",
+       x = "GDP Per Capita (USD)", y = "Life Expectancy (Years)")
+
+# Life Expectancy vs Hospital Beds Per 1000
+ggplot(data_Health_Eco, aes(x = Hospital_Beds_Per_1000, y = Life_Expectancy)) +
+  geom_point(color = "green", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(title = "Life Expectancy vs Hospital Beds per 1000",
+       x = "Hospital Beds per 1000", y = "Life Expectancy (Years)")
+
+# Life Expectancy vs Sanitary Expense Per GDP
+ggplot(data_Health_Eco, aes(x = Sanitary_Expense_Per_GDP, y = Life_Expectancy)) +
+  geom_point(color = "red", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(title = "Life Expectancy vs Sanitary Expense per GDP",
+       x = "Sanitary Expense (% of GDP)", y = "Life Expectancy (Years)")
+
+# Life Expectancy vs Unemployment Rate
+ggplot(data_Health_Eco, aes(x = Unemployment_Rate, y = Life_Expectancy)) +
+  geom_point(color = "pink", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(title = "Life Expectancy vs Unemployment Rate",
+       x = "Unemployment Rate (% )", y = "Life Expectancy (Years)")
+
+```
+#### Boxplots
+
+```{r}
+# Categorize GDP into Income Levels (World Bank Classification)
+data_Health_Eco$Income_Level <- cut(data_Health_Eco$GDP_Per_Capita, 
+    breaks = c(-Inf, 1135, 4465, 13845, Inf), 
+    labels = c("Low", "Lower-Middle", "Upper-Middle", "High"))
+
+# Boxplot of Life Expectancy by Income Level
+ggplot(data_Health_Eco, aes(x = Income_Level, y = Life_Expectancy, fill = Income_Level)) +
+  geom_boxplot() +
+  labs(title = "Life Expectancy Across Income Levels",
+       x = "World Bank Income Level", y = "Life Expectancy (Years)")
+```
+##### Boxplot with continent
+
+```{r}
+# Boxplot of Life Expectancy by Continent
+ggplot(data_Health_Eco, aes(x = Continent, y = Life_Expectancy, fill = Continent)) +
+  geom_boxplot() +
+  labs(title = "Life Expectancy Across Continents",
+       x = "Continents", y = "Life Expectancy (Years)")
+```
+
+#### Density plots
+
+```{r}
+# Density plot for GDP Per Capita
+ggplot(data_Health_Eco, aes(x = GDP_Per_Capita)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(title = "Distribution of GDP Per Capita")
+
+# Density plot for Sanitary Expense Per GDP
+ggplot(data_Health_Eco, aes(x = Sanitary_Expense_Per_GDP)) +
+  geom_density(fill = "red", alpha = 0.5) +
+  labs(title = "Distribution of Sanitary Expense Per GDP")
+```
+#### Life expectancy categorical division
+
+```{r}
+# Create Life Expectancy Categories (Low, Medium, High)
+data_Health_Eco$Life_Expectancy_Category <- cut(data_Health_Eco$Life_Expectancy, 
+    breaks = c(-Inf, 75, Inf), 
+    labels = c("Low", "High"))
+
+# View distribution
+table(data_Health_Eco$Life_Expectancy_Category)
+```
+#### Chi-square test
+
+```{r}
+# Create contingency table
+table_life_income <- table(data_Health_Eco$Income_Level, data_Health_Eco$Life_Expectancy_Category)
+table_life_income
+# Perform Chi-Square Test
+chisq.test(table_life_income)
+
+```
+#### Interpretation
+
+There is a highly significant association between Income Level and Life Expectancy Category
+
+
+### Health vs demographic
+
+
+```{r}
+
+library(dplyr)  # Data manipulation
+# Select relevant variables
+data_Health_Demo <- data %>%
+  select(Life_Expectancy,Infant_Deaths, Hospital_Beds_Per_1000, Urban_Population_Percent, Fertility_Rate, Obesity_Rate_Percent, Underweight_Rate_Percent)
+
+# View first few rows
+head(data_Health_Demo)
+```
+
+#### EDA
+
+
+```{r}
+data_Health_Demo <- na.omit(data_Health_Demo)
+
+# Check again for missing values
+colSums(is.na(data_Health_Demo))
+```
+
+```{r}
+# Compute correlation matrix
+cor_matrix_Health_Demo <- cor(data_Health_Demo, use = "complete.obs")
+
+# Improved correlation plot
+corrplot(cor_matrix_Health_Demo, method = "color", 
+         tl.cex = 0.6, # Reduce text size
+         tl.col = "black", # Change text color to black
+         addCoef.col = "black", # Show correlation values
+         number.cex = 0.6) # Adjust coefficient text size
+
+```
+
+### Health vs Environmental
+
+
+```{r}
+
+library(dplyr)  # Data manipulation
+# Select relevant variables
+data_Health_Envi <- data %>%
+  select(Life_Expectancy,Infant_Deaths, Hospital_Beds_Per_1000,CO2_Exposure_Percent, Safe_Water_Access_Percent )
+
+# View first few rows
+head(data_Health_Envi)
+```
+
+#### EDA
+
+
+```{r}
+data_Health_Envi <- na.omit(data_Health_Envi)
+
+# Check again for missing values
+colSums(is.na(data_Health_Envi))
+```
+
+```{r}
+# Compute correlation matrix
+cor_matrix_Health_Envi <- cor(data_Health_Envi, use = "complete.obs")
+
+# Improved correlation plot
+corrplot(cor_matrix_Health_Envi, method = "color", 
+         tl.cex = 0.6, # Reduce text size
+         tl.col = "black", # Change text color to black
+         addCoef.col = "black", # Show correlation values
+         number.cex = 0.6) # Adjust coefficient text size
+
+```
+

@@ -1,0 +1,261 @@
+---
+title: "Objective 1"
+author: "DANA4820"
+date: "2025-03-29"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r}
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(binom)
+library(exactci)
+library(PropCIs)
+library(epitools)
+library(MASS)
+library(car)
+library(tidyr)
+```
+
+
+```{r}
+# Read the dataset
+df <- read.csv('global_health.csv')
+str(df)
+View(df)
+```
+
+```{r}
+# Clean and handle missing values
+colnames(df) <- trimws(colnames(df))
+df_clean <- df %>% 
+  filter(!is.na(Life_Expectancy_Female) & !is.na(Life_Expectancy_Male)) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .)))
+
+num_cols <- sapply(df_clean, is.numeric)
+df_clean[num_cols] <- lapply(df_clean[num_cols], function(x) {
+  cap_value <- quantile(x, 0.99, na.rm = TRUE)
+  ifelse(x > cap_value, cap_value, x)
+})
+
+# Keep relevant variables
+df_clean <- df_clean %>%
+  dplyr::select(Country, Year, Life_Expectancy, Life_Expectancy_Female, Life_Expectancy_Male,
+         GDP_Per_Capita, Unemployment_Rate, Safe_Water_Access_Percent, Urban_Population_Percent,
+         Immunization_Rate, Air_Pollution, Infant_Deaths) %>%
+  group_by(Country) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  ungroup() %>%
+  filter(complete.cases(.))
+
+# Categorize Life Expectancy by Gender
+df_clean <- df_clean %>%
+  mutate(Life_Expectancy_Category_Female = case_when(
+    Life_Expectancy_Female < 60 ~ 'Low',
+    Life_Expectancy_Female >= 60 & Life_Expectancy_Female < 75 ~ 'Medium',
+    Life_Expectancy_Female >= 75 ~ 'High'
+  ),
+  Life_Expectancy_Category_Male = case_when(
+    Life_Expectancy_Male < 60 ~ 'Low',
+    Life_Expectancy_Male >= 60 & Life_Expectancy_Male < 75 ~ 'Medium',
+    Life_Expectancy_Male >= 75 ~ 'High'
+  ))
+```
+
+```{r}
+## Objective 1: Differences in Life Expectancy Between Genders
+
+# Frequency table for Female
+lifeexp_table_f <- table(df_clean$Life_Expectancy_Category_Female)
+lifeexp_table_f
+
+# Frequency table for Male
+lifeexp_table_m <- table(df_clean$Life_Expectancy_Category_Male)
+lifeexp_table_m
+```
+```{r}
+# Count frequencies 
+lifeexp_table <- table(Gender = rep(c("Female", "Male"), each = nrow(df_clean)),
+                        Category = c(df_clean$Life_Expectancy_Category_Female, df_clean$Life_Expectancy_Category_Male))
+lifeexp_table
+```
+
+
+```{r}
+
+# Wald Test
+wald_test <- function(y, n, p){
+  p_hat <- y/n
+  se <- sqrt(p_hat * (1 - p_hat) / n)
+  z <- (p_hat - p) / se
+  pvalue <- 2 * pnorm(abs(z), lower.tail=FALSE)
+  return(c('Z-Statistic' = z, 'P-Value' = pvalue))
+}
+wald_test(lifeexp_table[1,3], sum(lifeexp_table[1,]), 0.5)
+```
+
+```{r}
+# Score Test
+score_test <- prop.test(c(lifeexp_table[1,3], lifeexp_table[2,3]),
+                        c(sum(lifeexp_table[1,]), sum(lifeexp_table[2,])),
+                        alternative = 'two.sided')
+score_test
+```
+
+```{r}
+# Likelihood Ratio Test
+likelihood_ratio_test <- function(phat, pnull, y, n) {
+  LL <- c(
+    'LRT Statistic' = 2 * log(dbinom(x = y, prob = phat, size = n) / dbinom(x = y, prob = pnull, size = n)),
+    'P-Value' = pchisq(2 * log(dbinom(x = y, prob = phat, size = n) / dbinom(x = y, prob = pnull, size = n)), 1, lower.tail = FALSE)
+  )
+  return(LL)
+}
+likelihood_ratio_test(phat = 0.5, pnull = 0.5, y = lifeexp_table[1,3], n = sum(lifeexp_table[1,]))
+```
+
+```{r}
+# Chi-Square Test
+chi_test <- chisq.test(lifeexp_table)
+chi_test
+```
+
+```{r}
+# Binomial Exact Test
+binom_exact_test <- binom.test(lifeexp_table[1,3], sum(lifeexp_table[1,]), p = 0.5, alternative = "two.sided")
+binom_exact_test
+
+
+```
+
+
+
+```{r}
+# Confidence Intervals (Wald, Wilson, Likelihood Ratio)
+wald_ci <- binom.confint(lifeexp_table[1,3], sum(lifeexp_table[1,]), conf.level = 0.95, method = "asymptotic")
+wilson_ci <- binom.confint(lifeexp_table[1,3], sum(lifeexp_table[1,]), conf.level = 0.95, method = "wilson")
+lrt_ci <- binom.confint(lifeexp_table[1,3], sum(lifeexp_table[1,]), conf.level = 0.95, method = "lrt")
+
+list(Wald_CI = wald_ci, Wilson_CI = wilson_ci, Likelihood_Ratio_CI = lrt_ci)
+
+```
+
+```{r}
+# Proportional comparison barplot
+prop_df <- df_clean %>%
+  pivot_longer(cols = c(Life_Expectancy_Category_Female, Life_Expectancy_Category_Male), 
+               names_to = "Gender", values_to = "Life_Category") %>%
+  group_by(Gender, Life_Category) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  group_by(Gender) %>%
+  mutate(Proportion = Count / sum(Count))
+
+ggplot(prop_df, aes(x = Life_Category, y = Proportion, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Proportion of Life Expectancy Categories by Gender", x = "Category", y = "Proportion") +
+  theme_minimal()
+```
+
+```{r}
+# Summary Stats Comparison
+summary_stats <- df_clean %>%
+  summarise(
+    Mean_Female = mean(Life_Expectancy_Female),
+    Mean_Male = mean(Life_Expectancy_Male),
+    Median_Female = median(Life_Expectancy_Female),
+    Median_Male = median(Life_Expectancy_Male),
+    SD_Female = sd(Life_Expectancy_Female),
+    SD_Male = sd(Life_Expectancy_Male)
+  )
+summary_stats
+```
+```{r}
+# Paired T-Test between Male and Female Life Expectancy
+t_test <- t.test(df_clean$Life_Expectancy_Female, df_clean$Life_Expectancy_Male, paired = TRUE)
+t_test
+```
+```{r}
+# Density plot for Male and Female
+long_df <- df_clean %>%
+  dplyr::select(Country, Life_Expectancy_Female, Life_Expectancy_Male) %>%
+  pivot_longer(cols = starts_with("Life_Expectancy"), names_to = "Gender", values_to = "Life_Expectancy")
+
+long_df$Gender <- ifelse(grepl("Female", long_df$Gender), "Female", "Male")
+
+ggplot(long_df, aes(x = Life_Expectancy, fill = Gender)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of Life Expectancy by Gender", x = "Life Expectancy", y = "Density") +
+  theme_minimal()
+```
+
+
+
+
+
+
+```{r}
+# ANOVA to compare Life Expectancy by Gender using long format
+anova_df <- df_clean %>%
+  dplyr::select(Country, Life_Expectancy_Female, Life_Expectancy_Male) %>%
+  pivot_longer(cols = c(Life_Expectancy_Female, Life_Expectancy_Male),
+               names_to = "Gender", values_to = "Life_Expectancy",
+               names_transform = list(Gender = ~ifelse(. == "Life_Expectancy_Female", "Female", "Male")))
+
+# Run one-way ANOVA
+anova_model <- aov(Life_Expectancy ~ Gender, data = anova_df)
+summary(anova_model)
+
+
+```
+
+
+```{r}
+# 1. Side-by-Side Boxplots of Life Expectancy by Gender
+ggplot(long_df, aes(x = Gender, y = Life_Expectancy, fill = Gender)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Life Expectancy by Gender", x = "Gender", y = "Life Expectancy") +
+  theme_minimal()
+
+```
+
+```{r}
+# 2. Line Plot of Life Expectancy Over Time by Gender
+df_long_time <- df_clean %>%
+  dplyr::select(Year, Country, Life_Expectancy_Female, Life_Expectancy_Male) %>%
+  pivot_longer(cols = starts_with("Life_Expectancy_"), names_to = "Gender", values_to = "Life_Expectancy") %>%
+  mutate(Gender = ifelse(Gender == "Life_Expectancy_Female", "Female", "Male"))
+
+ggplot(df_long_time, aes(x = Year, y = Life_Expectancy, color = Gender)) +
+  geom_line(stat = "summary", fun = mean) +
+  labs(title = "Average Life Expectancy Over Time by Gender", x = "Year", y = "Life Expectancy") +
+  theme_minimal()
+
+```
+
+```{r}
+# 3. Heatmap of Life Expectancy by Country and Gender
+gap_df <- df_clean %>%
+  mutate(Gender_Gap = Life_Expectancy_Female - Life_Expectancy_Male)
+
+# 🔍 Improved Gender Gap Plot (Top 20 countries with largest gap)
+top_gap_df <- gap_df %>%
+  mutate(Gender_Gap = Life_Expectancy_Female - Life_Expectancy_Male) %>%
+  group_by(Country) %>%
+  summarise(Avg_Gap = mean(Gender_Gap, na.rm = TRUE)) %>%
+  arrange(desc(Avg_Gap)) %>%
+  slice(1:20)
+
+ggplot(top_gap_df, aes(x = reorder(Country, Avg_Gap), y = Avg_Gap)) +
+  geom_col(fill = "salmon") +
+  coord_flip() +
+  labs(title = "Top 20 Countries with Highest Gender Gap in Life Expectancy",
+       subtitle = "Positive values mean females live longer than males",
+       x = "Country", y = "Life Expectancy Difference (Female - Male)") +
+  theme_minimal(base_size = 12)
+
+```
+

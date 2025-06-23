@@ -1,0 +1,200 @@
+---
+title: "DANA4820_Project_bernard"
+author: "Bernard Bernabeo"
+date: "2025-03-25"
+output:
+  word_document: default
+  html_document: default
+---
+
+STUDY OBJECTIVE: How do immunization rates, safe water access, and air pollution levels impact infant mortality across countries over a 10-year period?
+
+
+
+```{r}
+#Load libraries
+library(dplyr)
+library(ggplot2)
+library(MASS)
+library(countrycode)
+library(car) 
+library(tidyr)
+
+```
+
+```{r}
+#Load dataset
+global_health = read.csv("global_health.csv")  
+
+```
+
+```{r}
+#Data structure
+str(global_health)
+summary(global_health)
+```
+
+```{r}
+# Add continent column based on country names
+global_health$Continent = countrycode(global_health$Country, origin = "country.name", 
+                  destination = "continent")
+
+# View a few rows to confirm
+head(global_health)
+
+# View dataset 
+View(global_health)
+```
+
+```{r}
+# Convert Year to factor (categorical)
+global_health$Year <- as.factor(global_health$Year)
+```
+
+
+
+```{r}
+#Total missing values
+sum(is.na(global_health))
+
+colSums(is.na(global_health))
+rowSums(is.na(global_health))
+```
+
+```{r}
+# Check distributions using histograms (raw data)
+par(mfrow = c(2,2))  # Arrange plots in a 2x2 grid
+hist(global_health$Immunization_Rate, main = "Immunization Rate", col = "lightblue", breaks = 30)
+hist(global_health$Safe_Water_Access_Percent, main = "Safe Water Access Percent", col = "lightgreen", breaks = 30)
+hist(global_health$Air_Pollution, main = "Air Pollution", col = "lightcoral", breaks = 30)
+hist(global_health$Total_Population, main = "Total Population", col = "lightgray", breaks = 30)
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Median imputation for missing values 
+data_filled <- global_health %>% 
+  dplyr::select(Country, GDP_Per_Capita, Safe_Water_Access_Percent, Year, Immunization_Rate, Air_Pollution, Infant_Deaths, Fertility_Rate) %>%
+  group_by(Year) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))%>%
+ungroup()
+```
+
+```{r}
+# Summary statistics after imputation
+summary(data_filled)
+```
+```{r}
+df_complete <- data_filled[complete.cases(data_filled), ]
+df_complete$Year <- as.factor(df_complete$Year)
+View(df_complete)
+```
+
+```{r}
+summary(df_complete)
+```
+
+
+
+```{r}
+# Check distributions using histograms (raw data)
+par(mfrow = c(2,2))  # Arrange plots in a 2x2 grid
+hist(df_complete$Immunization_Rate, main = "Immunization Rate", col = "lightblue", breaks = 30)
+hist(df_complete$Safe_Water_Access_Percent, main = "Safe Water Access Percent", col = "lightgreen", breaks = 30)
+hist(df_complete$Air_Pollution, main = "Air Pollution", col = "lightcoral", breaks = 30)
+#hist(data_filled$Total_Population, main = , col = "lightgray", breaks = 30)
+```
+
+
+
+```{r}
+# Boxplots to detect outliers
+boxplot(df_complete$Immunization_Rate, main = "Immunization Rate", col = "lightblue")
+boxplot(df_complete$Safe_Water_Access_Percent, main = "Safe Water Access Percent", col = "lightgreen")
+boxplot(df_complete$Air_Pollution, main = "Air Pollution", col = "lightcoral")
+#boxplot(global_health$Total_Population, main = "Total Population", col = "lightgray")
+```
+
+
+```{r}
+# Fit Poisson regression model (Infant Mortality as the response variable)
+model <- glm(Infant_Deaths ~ GDP_Per_Capita + Safe_Water_Access_Percent  + Immunization_Rate + Air_Pollution + Infant_Deaths + Year + Fertility_Rate, family = poisson,
+                   data = df_complete)
+summary(model)
+```
+```{r}
+# Check for overdispersion
+dispersion_model <- sum(residuals(model, type = "pearson")^2) / model$df.residual
+dispersion_model  # If >1.5, consider Negative Binomial regression
+
+```
+```{r}
+df_complete$Year <- as.numeric(as.character(df_complete$Year))
+```
+
+
+```{r}
+cor(df_complete[, c("GDP_Per_Capita", "Safe_Water_Access_Percent", "Immunization_Rate", "Air_Pollution", "Infant_Deaths", "Year" , "Fertility_Rate")], use = "pairwise.complete.obs")
+```
+
+```{r}
+# Negative Binomial regression model (Infant Mortality as the response variable)
+library(MASS)
+nb_model <- glm.nb(Infant_Deaths ~ GDP_Per_Capita + Safe_Water_Access_Percent + Immunization_Rate + Air_Pollution + Year, 
+                   data = df_complete,
+                   start = rep(0.1, 6))  # Adjust the number of starting values based on predictors
+summary(nb_model)
+```
+
+```{r}
+poisson_model <- glm(Infant_Deaths ~ GDP_Per_Capita + Safe_Water_Access_Percent + Immunization_Rate + Air_Pollution + Year, 
+                     data = df_complete, 
+                     family = poisson)
+summary(poisson_model)
+```
+
+
+#### predicted logit [pi (Infant Deaths)] = beta0 + beta1 * Immunization_Rate + beta2 * Safe_Water_Access_Percent + beta3 * Air_Pollution + beta4 * Total_Population + beta5 * Year
+
+#### predicted logit [pi (Infant Deaths)] = 8.464 + (-0.252) * Immunization_Rate + (-0.967) * Safe_Water_Access_Percent + (0.604) * Air_Pollution + (2.39) * Total_Population + (0.044) * Year
+
+
+H0: betai = 0 Predictor/s has no contribution on the prediction of Infant Deaths.
+Ha: betai != 0 At least one of the predictors has effect on Infant Deaths.
+
+```{r}
+# Converting log-transformed coefficients from Negative Binomial model into probabilities
+exp(coef(nb_model))
+```
+```{r}
+# Variance Inflation Factor (VIF) for multicollinearity check
+vif(nb_model)
+```
+
+
+#### INTERPRETATION:
+Intercept(1.649e-10):This is the baseline value for the infant death rate when all predictors are set to zero. Since in real life, these predictors can't be zero, it is practically meaningful to interpret its value. 
+Immunization Rate(0.7773): A 1-unit increase in immunization rate reduces infant deaths by 22.3%
+Safe Water Access Percent(0.3801): A 1% increase in safe water access reduces infant deaths by 62%.
+Air Pollution(1.8289): A 1-unit increase in air pollution increase infant death by 83%.
+Total Population(10.9140): A 1-unit increase in population multiplies infant deaths by 10.91 times
+Year(1.045): Since p-value (0.261) is > than alpha (0.05 or 0.1), we fail to reject H0.Year does not appear to contribute meaningfully to explaining variation in infant deaths. 
+
+
+```{r}
+# Check for overdispersion
+dispersion <- sum(residuals(nb_model, type = "pearson")^2) / nb_model$df.residual
+dispersion  # If >1.5, consider Negative Binomial regression
+
+```
+#Categorizing Air pollution 
+```{r}
+global_health_scaled$Air_Pollution_Category <- cut(global_health_scaled$Air_Pollution, 
+                                   breaks = c(-Inf, 50, 100, Inf),  
+                                   labels = c("Good", "Moderate", "Unhealthy"))
+View(global_health_scaled)
+```
+

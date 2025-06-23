@@ -1,0 +1,443 @@
+---
+title: "CoxModel"
+output: html_document
+date: "2025-03-29"
+---
+
+```{r}
+# Load required packages
+library(survival)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(survminer)
+```
+
+```{r}
+# Step 1: Data Preparation
+# Assuming data is in a file called "global_health_data.csv"
+data <- read.csv("global_health.csv")
+```
+
+```{r}
+# Check data structure
+str(data)
+summary(data)
+```
+
+```{r}
+# Filling NAs with group mean for numeric columns only
+data_filled <- data %>%
+  select(Country, Life_Expectancy, Life_Expectancy_Female, Life_Expectancy_Male, GDP_Per_Capita, Unemployment_Rate, Safe_Water_Access_Percent, Urban_Population_Percent, Year, Immunization_Rate, Air_Pollution, Infant_Deaths) %>%
+  group_by(Country) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .))) %>%
+  ungroup()
+
+summary(data_filled)
+```
+
+
+
+```{r}
+df_complete <- data_filled[complete.cases(data_filled), ]
+View(df_complete)
+```
+
+```{r}
+df_complete %>%
+  group_by(Country) %>%
+  summarise(count = n())
+```
+
+```{r}
+# Create categorical variables from continuous ones
+# Income level categories based on GDP_Per_Capita
+df_complete <- df_complete %>%
+  mutate(
+    Income_Level = case_when(
+      GDP_Per_Capita <= quantile(GDP_Per_Capita, 0.25) ~ "Low",
+      GDP_Per_Capita <= quantile(GDP_Per_Capita, 0.50) ~ "Low-mid",
+      GDP_Per_Capita <= quantile(GDP_Per_Capita, 0.75) ~ "Upper-mid",
+      TRUE ~ "High"
+    )
+  )
+```
+
+```{r}
+df_complete$Income_Level <- factor(df_complete$Income_Level, levels = c("Low", "Low-mid", "Upper-mid", "High"))
+```
+
+
+```{r}
+# Examine the distribution of infant deaths
+hist(df_complete$Infant_Deaths, breaks = 30, 
+     main = "Distribution of Infant Deaths per 1,000 Live Births",
+     xlab = "Infant Deaths per 1,000 Live Births")
+```
+```{r}
+r = 12
+```
+
+
+```{r}
+# Summary statistics by categorical variables
+df_complete %>%
+  group_by(Income_Level) %>%
+  summarize(
+    mean_infant_deaths = mean(Infant_Deaths),
+    median_infant_deaths = median(Infant_Deaths),
+    count = n()
+  )
+```
+
+
+```{r}
+# Correlation matrix of key continuous explanatory variables
+explanatory_vars <- df_complete %>%
+  select(Infant_Deaths, Fertility_Rate, Water_Access_Percent, Unemployment_Rate, GDP_Per_Capita, Immunization_Rate, Air_Pollution, Safe_Water_Access_Percent)
+
+cor_matrix <- cor(explanatory_vars, use = "complete.obs")
+corrplot(cor_matrix, method = "circle")
+```
+
+```{r}
+# Visualize infant mortality trends over time by income level
+ggplot(df_complete, aes(x = Year, y = Infant_Deaths, group = Country, color = Income_Level)) +
+  geom_line(alpha = 0.5) +
+  facet_wrap(~ Income_Level) +
+  theme_minimal() +
+  labs(title = "Infant Mortality Trends by Income Level (2012-2021)",
+       x = "Year", y = "Infant Deaths per 1,000 Live Births")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Handle missing values
+data <- data %>%
+  # Impute missing values or remove rows with missing values
+  na.omit()
+```
+
+
+```{r}
+# Create categorical variables from continuous ones
+# Income level categories based on GDP_Per_Capita
+data <- data %>%
+  mutate(
+    Income_Level = case_when(
+      GDP_Per_Capita <= quantile(GDP_Per_Capita, 0.25) ~ "Low",
+      GDP_Per_Capita <= quantile(GDP_Per_Capita, 0.75) ~ "Medium",
+      TRUE ~ "High"
+    ),
+    # Healthcare system categories based on hospital beds and sanitary expense
+    Healthcare_System = case_when(
+      Hospital_Beds_Per_1000 <= median(Hospital_Beds_Per_1000) & 
+        Sanitary_Expense_Per_GDP <= median(Sanitary_Expense_Per_GDP) ~ "Limited",
+      Hospital_Beds_Per_1000 > median(Hospital_Beds_Per_1000) & 
+        Sanitary_Expense_Per_GDP > median(Sanitary_Expense_Per_GDP) ~ "Advanced",
+      TRUE ~ "Developing"
+    ),
+    # Water and sanitation categories
+    WASH_Status = case_when(
+      Water_Access_Percent >= 90 & Safe_Water_Access_Percent >= 90 ~ "Good",
+      Water_Access_Percent >= 70 & Safe_Water_Access_Percent >= 70 ~ "Adequate",
+      TRUE ~ "Poor"
+    )
+  )
+```
+
+```{r}
+# Convert categorical variables to factors
+data$Income_Level <- factor(data$Income_Level, levels = c("Low", "Medium", "High"))
+data$Healthcare_System <- factor(data$Healthcare_System, levels = c("Limited", "Developing", "Advanced"))
+data$WASH_Status <- factor(data$WASH_Status, levels = c("Poor", "Adequate", "Good"))
+```
+
+
+```{r}
+# Step 2: Preliminary Analysis
+# Summary statistics
+summary(data$Infant_Deaths)
+```
+
+```{r}
+# Examine the distribution of infant deaths
+hist(data$Infant_Deaths, breaks = 30, 
+     main = "Distribution of Infant Deaths per 1,000 Live Births",
+     xlab = "Infant Deaths per 1,000 Live Births")
+```
+
+```{r}
+# Summary statistics by categorical variables
+data %>%
+  group_by(Income_Level) %>%
+  summarize(
+    mean_infant_deaths = mean(Infant_Deaths),
+    median_infant_deaths = median(Infant_Deaths),
+    count = n()
+  )
+
+data %>%
+  group_by(Healthcare_System) %>%
+  summarize(
+    mean_infant_deaths = mean(Infant_Deaths),
+    median_infant_deaths = median(Infant_Deaths),
+    count = n()
+  )
+
+data %>%
+  group_by(WASH_Status) %>%
+  summarize(
+    mean_infant_deaths = mean(Infant_Deaths),
+    median_infant_deaths = median(Infant_Deaths),
+    count = n()
+  )
+```
+
+
+```{r}
+# Correlation matrix of key continuous explanatory variables
+explanatory_vars <- data %>%
+  select(GDP_Per_Capita, Urban_Population_Percent, 
+         Water_Access_Percent, Safe_Water_Access_Percent,
+         Unemployment_Rate, Sanitary_Expense_Per_GDP, 
+         Life_Expectancy, Hospital_Beds_Per_1000,
+         Immunization_Rate, Air_Pollution)
+
+cor_matrix <- cor(explanatory_vars, use = "complete.obs")
+corrplot(cor_matrix, method = "circle")
+```
+
+
+```{r}
+# Visualize infant mortality trends over time by income level
+ggplot(data, aes(x = Year, y = Infant_Deaths, group = Country, color = Income_Level)) +
+  geom_line(alpha = 0.5) +
+  facet_wrap(~ Income_Level) +
+  theme_minimal() +
+  labs(title = "Infant Mortality Trends by Income Level (2012-2021)",
+       x = "Year", y = "Infant Deaths per 1,000 Live Births")
+```
+```{r}
+summary(data$Infant_Deaths)
+```
+```{r}
+
+```
+
+
+```{r}
+# Step 3: Cox Regression Model Setup
+# For infant mortality, we need to set up the data for survival analysis
+# We'll create a binary event indicator for high infant mortality (above median)
+median_mortality <- mean(data$Infant_Deaths)
+data$high_infant_mortality <- ifelse(data$Infant_Deaths > median_mortality, 1, 0)
+
+# Create survival time (years from start of study)
+data$study_time <- data$Year - min(data$Year) + 1
+
+# Create survival object
+surv_obj <- Surv(time = data$study_time, event = data$high_infant_mortality)
+
+# Step 4: Model Building
+# Univariate Cox models for continuous variables
+uni_model_gdp <- coxph(surv_obj ~ GDP_Per_Capita, data = data)
+uni_model_urban <- coxph(surv_obj ~ Urban_Population_Percent, data = data)
+uni_model_water <- coxph(surv_obj ~ Water_Access_Percent, data = data)
+uni_model_safewater <- coxph(surv_obj ~ Safe_Water_Access_Percent, data = data)
+uni_model_beds <- coxph(surv_obj ~ Hospital_Beds_Per_1000, data = data)
+uni_model_immun <- coxph(surv_obj ~ Immunization_Rate, data = data)
+uni_model_pollution <- coxph(surv_obj ~ Air_Pollution, data = data)
+
+# Univariate Cox models for categorical variables
+uni_model_income <- coxph(surv_obj ~ Income_Level, data = data)
+uni_model_healthcare <- coxph(surv_obj ~ Healthcare_System, data = data)
+uni_model_wash <- coxph(surv_obj ~ WASH_Status, data = data)
+
+# Summarize univariate models
+print("GDP Per Capita:")
+summary(uni_model_gdp)
+
+print("Urban Population Percentage:")
+summary(uni_model_urban)
+
+print("Water Access Percentage:")
+summary(uni_model_water)
+
+print("Safe Water Access Percentage:")
+summary(uni_model_safewater)
+
+print("Hospital Beds Per 1000:")
+summary(uni_model_beds)
+
+print("Immunization Rate:")
+summary(uni_model_immun)
+
+print("Air Pollution:")
+summary(uni_model_pollution)
+
+print("Income Level:")
+summary(uni_model_income)
+
+print("Healthcare System:")
+summary(uni_model_healthcare)
+
+print("WASH Status:")
+summary(uni_model_wash)
+```
+
+
+```{r}
+# Multivariate Cox model with both continuous and categorical variables
+multi_model <- coxph(surv_obj ~ GDP_Per_Capita + 
+                     Safe_Water_Access_Percent + Hospital_Beds_Per_1000 + 
+                     Immunization_Rate + Air_Pollution + 
+                     Income_Level + Healthcare_System, data = data)
+
+# Summarize multivariate model
+summary(multi_model)
+```
+
+```{r}
+# Step 5: Model Refinement
+# Check proportional hazards assumption
+test_ph <- cox.zph(multi_model)
+print(test_ph)
+plot(test_ph)
+```
+
+```{r}
+# If violations are found, consider time-dependent covariates
+# Example for GDP per capita if it violates proportional hazards
+data$gdp_time <- data$GDP_Per_Capita * log(data$study_time)
+
+time_dependent_model <- coxph(surv_obj ~ Urban_Population_Percent + 
+                            Safe_Water_Access_Percent + Hospital_Beds_Per_1000 + 
+                            Immunization_Rate + Air_Pollution + 
+                            Income_Level + Healthcare_System + WASH_Status +
+                            gdp_time , data = data)
+```
+
+```{r}
+# Compare models using AIC
+AIC(multi_model)
+AIC(time_dependent_model)
+```
+
+```{r}
+# Define the full model with all potential predictors and key interactions
+full_model <- coxph(surv_obj ~ GDP_Per_Capita + Urban_Population_Percent + 
+                    Water_Access_Percent + Safe_Water_Access_Percent +
+                    Unemployment_Rate + Sanitary_Expense_Per_GDP + 
+                    Hospital_Beds_Per_1000 + Immunization_Rate + Air_Pollution +
+                    Income_Level + Healthcare_System + WASH_Status +
+                    # Add interactions between economic and healthcare factors
+                    GDP_Per_Capita:Healthcare_System +
+                    # Add interactions between economic and water/sanitation factors
+                    Income_Level:WASH_Status +
+                    # Add interactions between healthcare system and immunization
+                    Healthcare_System:Immunization_Rate +
+                    # Add interaction between urbanization and water access
+                    Urban_Population_Percent:Water_Access_Percent +
+                    # Add interaction between air pollution and healthcare system
+                    Air_Pollution:Healthcare_System,
+                    data = data)
+```
+
+
+```{r}
+# Step 1: Backward Stepwise Selection
+# Start with the full model and remove variables one by one
+backward_model <- step(full_model, direction = "backward", trace = TRUE)
+summary(backward_model)
+
+```
+
+```{r}
+
+# Step 2: Forward Stepwise Selection
+# Start with a null model and add variables one by one
+null_model <- coxph(surv_obj ~ 1, data = data)
+forward_model <- step(null_model, 
+                     scope = list(lower = ~1, 
+                                 upper = ~GDP_Per_Capita + Urban_Population_Percent + 
+                                         Water_Access_Percent + Safe_Water_Access_Percent +
+                                         Unemployment_Rate + Sanitary_Expense_Per_GDP + 
+                                         Hospital_Beds_Per_1000 + Immunization_Rate + Air_Pollution +
+                                         Income_Level + Healthcare_System + WASH_Status +
+                                         GDP_Per_Capita:Healthcare_System +
+                                         Income_Level:WASH_Status +
+                                         Healthcare_System:Immunization_Rate +
+                                         Urban_Population_Percent:Water_Access_Percent +
+                                         Air_Pollution:Healthcare_System),
+                     direction = "forward", trace = TRUE)
+summary(forward_model)
+
+```
+
+```{r}
+
+# Step 3: Bidirectional Stepwise Selection (both forward and backward)
+# This is often the most comprehensive approach
+both_model <- step(null_model, 
+                  scope = list(lower = ~1, 
+                              upper = ~GDP_Per_Capita + Urban_Population_Percent + 
+                                      Water_Access_Percent + Safe_Water_Access_Percent +
+                                      Unemployment_Rate + Sanitary_Expense_Per_GDP + 
+                                      Hospital_Beds_Per_1000 + Immunization_Rate + Air_Pollution +
+                                      Income_Level + Healthcare_System + WASH_Status +
+                                      GDP_Per_Capita:Healthcare_System +
+                                      Income_Level:WASH_Status +
+                                      Healthcare_System:Immunization_Rate +
+                                      Urban_Population_Percent:Water_Access_Percent +
+                                      Air_Pollution:Healthcare_System),
+                  direction = "both", trace = TRUE)
+
+summary(both_model)
+```
+
+
+```{r}
+# Compare AIC values of the three stepwise models
+AIC_comparison <- data.frame(
+  Model = c("Backward", "Forward", "Both"),
+  AIC = c(AIC(backward_model), AIC(forward_model), AIC(both_model))
+)
+print(AIC_comparison)
+```
+
+
+```{r}
+# Assess final model fit
+best_model <- backward_model  # Or whichever has the lowest AIC
+test_ph <- cox.zph(best_model)
+print(test_ph)
+plot(test_ph)
+```
+

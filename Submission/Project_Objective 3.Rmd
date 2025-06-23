@@ -1,0 +1,152 @@
+---
+title: "Project_Objective 3"
+output: html_document
+date: "2025-03-25"
+---
+
+```{r}
+# Load required packages
+library(survival)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(survminer)
+library(MASS)
+```
+
+```{r}
+# Load dataset
+data <- read.csv("global_health.csv")
+summary(data)
+```
+
+```{r}
+data_filled <- data %>%
+  dplyr::select(Country, CO2_Exposure_Percent, Fertility_Rate, Sanitary_Expense_Per_GDP, Unemployment_Rate, Safe_Water_Access_Percent, Immunization_Rate, Infant_Deaths, Hospital_Beds_Per_1000) %>%
+  group_by(Country) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  ungroup()
+
+summary(data_filled)
+#View(data_filled)
+```
+
+```{r}
+df_complete <- data_filled[complete.cases(data_filled) &
+                             !apply(data_filled, 1, function(x) any(is.infinite(x))), ]
+#View(df_complete)
+summary(df_complete)
+```
+
+
+```{r}
+hist(df_complete$Infant_Deaths, main = "Infant Deaths", col = "red", breaks = 30)
+boxplot(df_complete$Infant_Deaths, main = "Infant Deaths", col = "red", breaks = 30)
+```
+
+
+```{r}
+# Check distributions using histograms 
+par(mfrow = c(2,2))  # Arrange plots in a 2x2 grid
+hist(df_complete$Immunization_Rate, main = "Immunization Rate", col = "lightblue", breaks = 30)
+hist(df_complete$Safe_Water_Access_Percent, main = "Safe Water Access Percent", col = "lightgreen", breaks = 30)
+hist(df_complete$Hospital_Beds_Per_1000, main = "Hospital Beds Per 1000", col = "lightcoral", breaks = 30)
+hist(df_complete$Fertility_Rate, main = "Fertility Rate", col = "lightgray", breaks = 30)
+hist(df_complete$Unemployment_Rate, main = "Unemployment Rate", col = "lightyellow", breaks = 30)
+hist(df_complete$CO2_Exposure_Percent, main = "CO2 Exposure (%)", col = "pink", breaks = 30)
+hist(df_complete$Sanitary_Expense_Per_GDP, main = "Sanitary Expense Per GDP", col = "red", breaks = 30)
+```
+
+```{r}
+# Reset the plotting parameters
+par(mfrow = c(1,1))
+
+# Create a correlation matrix to see relationships between variables
+numeric_vars <- df_complete %>% 
+  dplyr::select(CO2_Exposure_Percent, Fertility_Rate, Sanitary_Expense_Per_GDP, Unemployment_Rate, Safe_Water_Access_Percent, Immunization_Rate, Infant_Deaths, Hospital_Beds_Per_1000)
+
+cor_matrix <- cor(numeric_vars, use = "complete.obs")
+corrplot(cor_matrix, method = "circle", type = "upper", 
+         tl.col = "black", tl.srt = 45, addCoef.col = "black", 
+         number.cex = 0.7)
+```
+
+```{r}
+# 1. Fit Poisson Regression Model
+poisson_model <- glm(Infant_Deaths ~ CO2_Exposure_Percent+ Fertility_Rate+ Sanitary_Expense_Per_GDP+ Unemployment_Rate+ Safe_Water_Access_Percent+ Immunization_Rate+ Hospital_Beds_Per_1000, 
+                   family = poisson(link = "log"), 
+                   data = df_complete)
+
+summary(poisson_model)
+```
+
+```{r}
+# 2. Check for overdispersion in Poisson model
+# Calculate dispersion parameter (should be close to 1 for Poisson)
+dispersion_param <- sum(residuals(poisson_model, type = "pearson")^2) / poisson_model$df.residual
+cat("Dispersion parameter:", dispersion_param, "\n")
+```
+
+```{r}
+# Visual check for overdispersion
+plot(fitted(poisson_model), residuals(poisson_model, type = "pearson"),
+     xlab = "Fitted values", ylab = "Pearson residuals",
+     main = "Residual Plot for Poisson Model")
+abline(h = 0, col = "red", lty = 2)
+```
+
+
+```{r}
+# 3. Fit Negative Binomial Regression Model to handle overdispersion
+
+nb_model <- glm.nb(Infant_Deaths ~ CO2_Exposure_Percent+ Fertility_Rate+ Sanitary_Expense_Per_GDP+ Unemployment_Rate+ Safe_Water_Access_Percent+ Immunization_Rate+ Hospital_Beds_Per_1000,
+                 data = df_complete)
+
+summary(nb_model)
+```
+
+
+```{r}
+dispersion_param <- sum(residuals(nb_model, type = "pearson")^2) / nb_model$df.residual
+cat("Dispersion parameter:", dispersion_param, "\n")
+```
+
+
+```{r}
+# 4. Compare models using AIC
+cat("Poisson model AIC:", AIC(poisson_model), "\n")
+cat("Negative Binomial model AIC:", AIC(nb_model), "\n")
+```
+
+
+```{r}
+# 6. Diagnostic plots for the better model (assuming negative binomial is better)
+par(mfrow = c(2, 2))
+plot(nb_model)
+par(mfrow = c(1, 1))
+```
+
+```{r}
+# 7. Proportion of Deviance (Model Predictive Power)
+null_deviance <- nb_model$null.deviance
+residual_deviance <- nb_model$deviance
+
+proportion_deviance <- (null_deviance - residual_deviance)/ null_deviance
+
+proportion_deviance
+
+```
+
+```{r}
+#8. Transforming the coefficients (log of expected counts) fo interpretation
+coefficients <- summary(nb_model)$coefficients
+
+percent_change <- (exp(coefficients[, 1]) -1) * 100
+
+percent_change
+```
+
+
+
+

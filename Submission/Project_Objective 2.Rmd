@@ -1,0 +1,452 @@
+---
+title: "Project-Objective 2"
+author: "Group 1"
+date: "2025-03-26"
+output:
+  word_document: default
+---
+# What economic and social factors most influence lower life expectancy in gender?
+
+
+## Dataset
+
+```{r}
+# Load necessary libraries
+library(dplyr)  # Data manipulation
+library(ggplot2)  # Data visualization
+library(caret)  # Machine learning and feature selection
+library(corrplot)  # Correlation plot
+library(car)  # For regression diagnostics
+library(countrycode)
+```
+
+
+
+```{r}
+# Load dataset
+global_health <- read.csv("global_health.csv")
+
+# Inspect dataset
+str(global_health)  # Check structure
+summary(global_health)  # Get basic statistics
+head(global_health)  # Preview first few rows
+```
+
+
+```{r}
+# Add continent column based on country names
+global_health$Continent = countrycode(global_health$Country, origin = "country.name", 
+                  destination = "continent")
+
+# View a few rows to confirm
+head(global_health)
+
+# View dataset 
+View(global_health)
+```
+
+
+```{r}
+# Convert Year to factor (categorical)
+global_health$Year <- as.factor(global_health$Year)
+```
+
+
+```{r}
+#Total missing values
+sum(is.na(global_health))
+
+colSums(is.na(global_health))
+
+```
+
+
+```{r}
+# Check distributions using histograms (raw data)
+par(mfrow = c(3,2))  # Arrange plots in a 2x2 grid
+hist(global_health$Life_Expectancy_Male, main = "Life Expectancy Male", col = "lightblue", breaks = 30)
+hist(global_health$Life_Expectancy_Female, main = "Life Expectancy Female", col = "lightgreen", breaks = 30)
+hist(global_health$GDP_Per_Capita, main = "GDP_Per_Capita", col = "lightcoral", breaks = 30)
+hist(global_health$Urban_Population_Percent, main = "Urban_Population_Percent", col = "lightgray", breaks = 30)
+hist(global_health$Unemployment_Rate, main = "Unemployment_Rate", col = "lightpink", breaks = 30)
+hist(global_health$Safe_Water_Access_Percent, main = "Safe_Water_Access_Percent", col = "lightyellow", breaks = 30)
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+data_filled <- global_health %>%
+  select(Country, Life_Expectancy, Life_Expectancy_Female, Life_Expectancy_Male, GDP_Per_Capita, Unemployment_Rate, Safe_Water_Access_Percent, Urban_Population_Percent) %>%
+  group_by(Country) %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  ungroup()
+```
+```{r}
+summary(data_filled)
+```
+
+
+
+```{r}
+global_health <- data_filled[complete.cases(data_filled), ]
+
+```
+
+
+```{r}
+# Summary statistics after imputation
+summary(global_health)
+```
+
+```{r}
+# Check distributions using histograms (raw data)
+par(mfrow = c(3,2))  # Arrange plots in a 2x2 grid
+hist(global_health$Life_Expectancy_Male, main = "Life Expectancy Male", col = "lightblue", breaks = 30)
+hist(global_health$Life_Expectancy_Female, main = "Life Expectancy Female", col = "lightgreen", breaks = 30)
+hist(global_health$GDP_Per_Capita, main = "GDP_Per_Capita", col = "lightcoral", breaks = 30)
+hist(global_health$Urban_Population_Percent, main = "Urban_Population_Percent", col = "lightgray", breaks = 30)
+hist(global_health$Unemployment_Rate, main = "Unemployment_Rate", col = "lightpink", breaks = 30)
+hist(global_health$Safe_Water_Access_Percent, main = "Safe_Water_Access_Percent", col = "lightyellow", breaks = 30)
+```
+
+
+
+
+
+
+```{r}
+# Boxplots to detect outliers
+boxplot(global_health$Life_Expectancy_Male, main = "Life_Expectancy_Male", col = "lightblue")
+boxplot(global_health$Life_Expectancy_Female, main = "Life_Expectancy_Female", col = "lightgreen")
+boxplot(global_health$GDP_Per_Capita, main = "GDP_Per_Capita", col = "lightcoral")
+boxplot(global_health$Urban_Population_Percent, main = "Urban_Population_Percent", col = "lightgray")
+boxplot(global_health$Unemployment_Rate, main = "Unemployment_Rate", col = "lightpink")
+boxplot(global_health$Safe_Water_Access_Percent, main = "Safe_Water_Access_Percent", col = "lightyellow")
+```
+```{r}
+# Combined boxplot for Male and Female Life Expectancy
+boxplot(global_health$Life_Expectancy_Male,
+        global_health$Life_Expectancy_Female,
+        names = c("Male", "Female"),
+        main = "Life Expectancy by Gender",
+        col = c("#88BBD6", "#003366"),
+        ylab = "Life Expectancy (Years)")
+
+```
+
+
+
+```{r}
+# Categorías: Low (≤75), High (>75)
+global_health$Life_Expectancy_Category_Male <- cut(global_health$Life_Expectancy_Male,
+                                            breaks = c(-Inf, 75, Inf),
+                                            labels = c("Low", "High"))
+
+global_health$Life_Expectancy_Category_Female <- cut(global_health$Life_Expectancy_Female,
+                                              breaks = c(-Inf, 75, Inf),
+                                              labels = c("Low", "High"))
+
+```
+
+
+
+```{r}
+# GDP per Capita (Low / High based on median)
+global_health$GDP_Category <- ifelse(global_health$GDP_Per_Capita < median(global_health$GDP_Per_Capita, na.rm = TRUE),
+                              "Low GDP", "High GDP")
+
+# Urban Population
+global_health$Urban_Category <- ifelse(global_health$Urban_Population_Percent < median(global_health$Urban_Population_Percent, na.rm = TRUE),
+                                "Low Urban", "High Urban")
+
+# Unemployment Rate
+global_health$Unemployment_Category <- ifelse(global_health$Unemployment_Rate < median(global_health$Unemployment_Rate, na.rm = TRUE),
+                                   "Low Unemployment Rate", "High Unemployment Rate")
+
+# Safe_Water_Access_Percent
+global_health$Safe_Water_Access_Category <- ifelse(global_health$Safe_Water_Access_Percent < median(global_health$Safe_Water_Access_Percent, na.rm = TRUE),
+                                   "Low Safe Water Access", "High Safe Water Access")
+```
+
+
+# Female
+## GDP Category vs. Female Life Expectancy
+
+```{r}
+# Create contingency table
+table_female_gdp <- table(global_health$Life_Expectancy_Category_Female,
+                          global_health$GDP_Category)
+table_female_gdp
+
+# Perform Chi-Square Test
+chisq.test(table_female_gdp, correct = FALSE)
+
+```
+### Interpretation
+
+-Since the p-value is far less than 0.05, we reject the null hypothesis.
+-This means there is a statistically significant association between GDP category and female life expectancy.
+-Countries with higher GDP are more likely to have higher female life expectancy.
+
+## Urban Population Category vs. Female Life Expectancy
+
+```{r}
+table_female_urban <- table(global_health$Life_Expectancy_Category_Female,
+                            global_health$Urban_Category)
+table_female_urban
+
+chisq.test(table_female_urban,correct = FALSE)
+
+```
+### Interpretation
+
+-Since p < 0.05, you reject the null hypothesis.
+-There is a statistically significant relationship between urban population level and female life expectancy.
+-Countries with higher urbanization tend to have higher female life expectancy.
+
+## Unemployment Category vs. Female Life Expectancy
+
+```{r}
+table_female_unemp <- table(global_health$Life_Expectancy_Category_Female,
+                            global_health$Unemployment_Category)
+table_female_unemp
+
+chisq.test(table_female_unemp, correct = FALSE)
+```
+### Interpretion
+
+-p < 0.05, so you reject the null hypothesis.
+-There is a significant association between unemployment rate and female life expectancy.
+-Even among high unemployment countries, many still have high life expectancy, but the association remains statistically significant.
+
+
+## Safe Water Access Category vs. Female Life Expectancy
+
+```{r}
+table_female_water <- table(global_health$Life_Expectancy_Category_Female,
+                            global_health$Safe_Water_Access_Category)
+table_female_water
+
+chisq.test(table_female_water, correct = FALSE)
+
+```
+### Interpretation
+
+-There is a statistically significant association between safe water access and female life expectancy (p < 0.05).
+-This means that countries with high access to safe water tend to have higher female life expectancy.
+-In countries where people have better access to safe water, women are more likely to live longer.
+
+
+# Male
+## GDP Category vs. Male Life Expectancy
+
+```{r}
+# Create contingency table
+table_Male_gdp <- table(global_health$Life_Expectancy_Category_Male,
+                          global_health$GDP_Category)
+table_Male_gdp
+
+# Perform Chi-Square Test
+chisq.test(table_Male_gdp, correct = FALSE)
+
+```
+### Interpretation
+
+-There is a statistically significant association between GDP per capita and male life expectancy.
+-Countries with higher GDP are far more likely to have higher male life expectancy.
+-In contrast, low GDP countries are overwhelmingly concentrated in the low life expectancy group.
+
+## Urban Population Category vs. Male Life Expectancy
+
+```{r}
+table_Male_urban <- table(global_health$Life_Expectancy_Category_Male,
+                            global_health$Urban_Category)
+table_Male_urban
+
+chisq.test(table_Male_urban, correct = FALSE)
+
+```
+### Interpretation
+
+-There is a statistically significant association between urban population and male life expectancy.
+-Countries with high urbanization are much more likely to have higher male life expectancy.
+-On the other hand, low urbanization is strongly associated with low life expectancy in males.
+
+## Unemployment Category vs. Male Life Expectancy
+
+```{r}
+table_Male_unemp <- table(global_health$Life_Expectancy_Category_Male,
+                            global_health$Unemployment_Category)
+table_Male_unemp
+
+chisq.test(table_Male_unemp, correct = FALSE)
+```
+### Interpretation 
+-There is no statistically significant association between unemployment rate and male life expectancy.
+-The p-value (0.7682) is much greater than 0.05, indicating that male life expectancy appears to be independent of unemployment levels in this dataset.
+
+## Safe Water Access Category vs. Male Life Expectancy
+
+```{r}
+table_Male_water <- table(global_health$Life_Expectancy_Category_Male,
+                            global_health$Safe_Water_Access_Category)
+table_Male_water
+
+chisq.test(table_Male_water, correct = FALSE)
+
+```
+### Interpretation
+
+-There is a statistically significant association between safe water access and male life expectancy.
+-Countries with high access to safe water are much more likely to have higher male life expectancy.
+-Countries with poor water access tend to have lower male life expectancy.
+
+
+## Visualizations
+
+```{r}
+library(ggplot2)
+
+```
+
+```{r}
+# Combine male and female data for faceted plotting
+library(dplyr)
+
+data_female <- global_health %>%
+  select(GDP_Category, Urban_Category, Unemployment_Category, Safe_Water_Access_Category,
+         Life_Expectancy_Category_Female) %>%
+  mutate(Gender = "Female",
+         Life_Expectancy_Category = Life_Expectancy_Category_Female)
+
+data_male <- global_health %>%
+  select(GDP_Category, Urban_Category, Unemployment_Category, Safe_Water_Access_Category,
+         Life_Expectancy_Category_Male) %>%
+  mutate(Gender = "Male",
+         Life_Expectancy_Category = Life_Expectancy_Category_Male)
+
+# Combine into one dataset
+gender_data <- bind_rows(data_female, data_male)
+
+```
+
+## Comparative Plot – Life Expectancy by GDP and Gender
+
+
+```{r}
+ggplot(gender_data, aes(x = GDP_Category, fill = Life_Expectancy_Category)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~Gender) +
+  labs(title = "Life Expectancy by GDP and Gender",
+       x = "GDP Category",
+       y = "Proportion",
+       fill = "Life Expectancy") +
+  scale_fill_manual(values = c("Low" = "#88BBD6", "High" = "#003366")) +
+  theme_minimal()
+```
+
+## Comparative Plot – Life Expectancy by Urbanization and Gender
+
+```{r}
+ggplot(gender_data, aes(x = Urban_Category, fill = Life_Expectancy_Category)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~Gender) +
+  labs(title = "Life Expectancy by Urbanization and Gender",
+       x = "Urbanization Level",
+       y = "Proportion",
+       fill = "Life Expectancy") +
+  scale_fill_manual(values = c("Low" = "#88BBD6",
+                             "High" = "#003366"))  +
+  theme_minimal()
+
+```
+
+
+## Comparative Plot – Life Expectancy by Unemployment and Gender
+
+```{r}
+
+gender_data$Unemployment_Category <- ifelse(
+  gender_data$Unemployment_Category == "High Unemployment Rate", 
+  "High\nUnemployment\nRate", 
+  "Low\nUnemployment\nRate"
+)
+
+ggplot(gender_data, aes(x = Unemployment_Category, fill = Life_Expectancy_Category)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~Gender) +
+  labs(title = "Life Expectancy by Unemployment and Gender",
+       x = "Unemployment Level",
+       y = "Proportion",
+       fill = "Life Expectancy") +
+  scale_fill_manual(values = c("Low" = "#88BBD6", "High" = "#003366")) +
+  theme_minimal()
+
+```
+
+
+## Comparative Plot – Life Expectancy by Safe Water Access and Gender
+
+```{r}
+gender_data$Safe_Water_Access_Category <- ifelse(
+  gender_data$Safe_Water_Access_Category == "High Safe Water Access",
+  "High\nSafe Water\nAccess",
+  "Low\nSafe Water\nAccess"
+)
+
+ggplot(gender_data, aes(x = Safe_Water_Access_Category, fill = Life_Expectancy_Category)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~Gender) +
+  labs(title = "Life Expectancy by Safe Water Access and Gender",
+       x = "Safe Water Access",
+       y = "Proportion",
+       fill = "Life Expectancy") +
+  scale_fill_manual(values = c("Low" = "#88BBD6", "High" = "#003366"))+
+  theme_minimal()
+
+```
+
+# GLM
+
+```{r}
+model_female <- glm(Life_Expectancy_Category_Female ~ GDP_Category + Urban_Category +
+             Safe_Water_Access_Category + Unemployment_Category,
+             family = binomial(link="logit"), data = global_health)
+
+summary(model_female)
+
+
+```
+
+```{r}
+exp(coef(model_female))
+
+```
+### Interpretation
+
+-Holding all other variables constant, the odds of having high female life expectancy in countries with low GDP are approximately 77% lower than in countries with high GDP. Strong evidence of a GDP effect (p < 0.001).  
+-Countries with low urbanization have about 90% lower odds of high female life expectancy compared to highly urbanized countries, after controlling for other variables. Strong urbanization effect (p < 0.001).  
+-The odds of high female life expectancy in countries with poor access to safe water are about 91% lower than those with good access, controlling for GDP, urbanization, and unemployment. Very strong effect (p < 0.001).  
+-Unemployment effect is not statistically significant (p = 0.139).  
+
+
+```{r}
+model_male <- glm(Life_Expectancy_Category_Male ~ GDP_Category + Urban_Category +
+             Safe_Water_Access_Category + Unemployment_Category,
+             family = binomial(link="logit"), data = global_health)
+
+summary(model_male)
+```
+
+
+```{r}
+exp(coef(model_male))
+
+```
+### Interpretation
+
+-Holding all other variables constant, countries with low GDP have 93% lower odds of high male life expectancy compared to those with high GDP.  Strong GDP effect (p < 0.001).  
+-Countries with low urbanization have 85% lower odds of high male life expectancy than highly urbanized countries, adjusting for other variables. Strong urbanization effect (p < 0.001).  
+-Countries with poor access to safe water have 91% lower odds of high male life expectancy than countries with good access. Very strong effect (p < 0.001).  
+-Countries with low unemployment have more than twice the odds (OR ≈ 2.16) of high male life expectancy compared to those with high unemployment. This time, the effect is statistically significant (p < 0.001).

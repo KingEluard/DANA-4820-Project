@@ -1,0 +1,64 @@
+---
+title: "Project"
+output: html_document
+date: "2025-03-21"
+---
+
+# Load necessary library
+```{r}
+library(dplyr)
+library(tidyr)
+```
+
+
+# Loading the dataset
+
+```{r}
+data <- read.csv("global_health.csv")
+head(data)
+```
+```{r}
+str(data)  # Check structure
+summary(data) # Get basic statistics
+```
+
+# 1. What are the differences in life expectancy between genders when categorized into distinct ranges (e.g., Low, Medium, High)?
+
+```{r}
+colSums(is.na(data[, c("Life_Expectancy_Female", "Life_Expectancy_Male")]))
+```
+
+```{r}
+# Handle Missing Values to use Mean
+data_life_expc <- data %>%
+  mutate(
+    Life_Expectancy_Female = ifelse(is.na(Life_Expectancy_Female), mean(Life_Expectancy_Female, na.rm = TRUE), Life_Expectancy_Female),
+    Life_Expectancy_Male = ifelse(is.na(Life_Expectancy_Male), mean(Life_Expectancy_Male, na.rm = TRUE), Life_Expectancy_Male)
+  )
+
+colSums(is.na(data_life_expc[, c("Life_Expectancy_Female", "Life_Expectancy_Male")]))
+```
+
+```{r}
+data_life_expc <- data_life_expc %>%
+  mutate(
+    Life_Expectancy_Category_Female = case_when(
+      Life_Expectancy_Female < 60 ~ "Low",
+      Life_Expectancy_Female >= 60 & Life_Expectancy_Female < 75 ~ "Medium",
+      Life_Expectancy_Female >= 75 ~ "High"
+    ),
+    Life_Expectancy_Category_Male = case_when(
+      Life_Expectancy_Male < 60 ~ "Low",
+      Life_Expectancy_Male >= 60 & Life_Expectancy_Male < 75 ~ "Medium",
+      Life_Expectancy_Male >= 75 ~ "High"
+    )
+  )
+
+View(data_life_expc)
+```
+
+```{r}
+contingency_table <- table(data_life_expc$Life_Expectancy_Category_Female, data_life_expc$Life_Expectancy_Category_Male)
+print(contingency_table)
+```
+
